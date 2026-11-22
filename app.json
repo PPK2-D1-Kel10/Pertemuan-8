@@ -27,6 +27,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Izinkan PraktiKu mengakses lokasi untuk memvalidasi presensi di laboratorium."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#208AEF",

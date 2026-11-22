@@ -24,6 +24,27 @@ export function validateAttendance({ studentId, role, session, attendance }: Att
   return { valid: true };
 }
 
+export type Coordinates = { latitude: number; longitude: number };
+
+// shortcut: one fixed lab for every session, duplicated in firestore.rules (nearLab) — change both; move to a per-session field if labs differ.
+export const LAB = { name: 'Laboratorium Komputer', latitude: -7.0486, longitude: 110.4381, radiusMeters: 100 };
+
+// Haversine great-circle distance in meters.
+export function distanceMeters(a: Coordinates, b: Coordinates): number {
+  const rad = Math.PI / 180;
+  const h = Math.sin(((b.latitude - a.latitude) * rad) / 2) ** 2
+    + Math.cos(a.latitude * rad) * Math.cos(b.latitude * rad) * Math.sin(((b.longitude - a.longitude) * rad) / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
+}
+
+export function validateLabRadius(position: Coordinates) {
+  const distance = distanceMeters(LAB, position);
+  const rounded = Math.round(distance);
+  return distance <= LAB.radiusMeters
+    ? { valid: true as const, distance: rounded }
+    : { valid: false as const, distance: rounded, message: `Kamu berada di luar radius laboratorium (${rounded} m dari ${LAB.name}, maksimal ${LAB.radiusMeters} m).` };
+}
+
 export function formatAttendanceTime(date: Date): string {
   return date.toLocaleTimeString('id-ID', {
     timeZone: 'Asia/Jakarta', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',

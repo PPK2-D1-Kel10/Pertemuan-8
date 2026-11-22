@@ -67,12 +67,14 @@ test('actual repository, Auth, realtime Firestore and AI API work together', { t
     await assistant.repo.saveSession(a, { practicalName: 'Integrasi PPK', className: 'A', date: '2026-11-20', startTime: '08:00', endTime: '10:00', participantIds: [s.uid] });
     const sessions = await adminApp.firestore().collection('sessions').where('assistantId', '==', a.uid).get();
     const id = sessions.docs[0].id;
-    await assert.rejects(() => student.repo.recordAttendance(s, id));
+    const lab = { latitude: -7.0486, longitude: 110.4381 };
+    await assert.rejects(() => student.repo.recordAttendance(s, id, lab));
     const opened = observe(doc(student.db, 'sessions', id), (data) => data.status === 'Berlangsung');
     await assistant.repo.changeSession(id, 'open');
     await opened;
-    await student.repo.recordAttendance(s, id);
-    await assert.rejects(() => student.repo.recordAttendance(s, id));
+    await assert.rejects(() => student.repo.recordAttendance(s, id, { latitude: 0, longitude: 0 }), /luar radius/);
+    await student.repo.recordAttendance(s, id, lab);
+    await assert.rejects(() => student.repo.recordAttendance(s, id, lab));
     await student.repo.submitPermission(s, id, 'Saya mengalami demam batuk dan perlu berobat ke klinik');
     const permissionId = `${id}_${s.uid}`;
     const classified = await httpsCallable(student.functions, 'classifyPermission')({ permissionId });

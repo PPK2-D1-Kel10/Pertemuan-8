@@ -2,13 +2,16 @@ const { before, after, beforeEach, test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, updateDoc, getDoc, getDocs, collection, query, where, serverTimestamp, runTransaction } = require('firebase/firestore');
+const { doc, setDoc, updateDoc, getDoc, getDocs, collection, query, where, serverTimestamp, runTransaction, GeoPoint } = require('firebase/firestore');
 
 let env;
 const profile = (uid, role = 'Praktikan') => ({ uid, role, email: `${uid}@example.test`, name: `Nama ${uid}`, nim: `NIM-${uid}` });
 const session = (status = 'Berlangsung') => ({ practicalName: 'PPK', className: 'A', date: '2026-11-20', startTime: '08:00', endTime: '10:00', participantIds: ['student', 'other'], assistantId: 'assistant', status, deleted: false, createdAt: new Date(), updatedAt: new Date() });
-function attendance(uid = 'student', sessionId = 'S1') { return { studentId: uid, studentName: `Nama ${uid}`, studentNumber: `NIM-${uid}`, sessionId, assistantId: 'assistant', createdAt: serverTimestamp() }; }
-function permission(uid = 'student') { return { ...attendance(uid), reason: 'Saya demam dan perlu berobat ke klinik', status: 'Menunggu Pemeriksaan', aiStatus: 'pending', aiCategory: null, reviewedAt: null, reviewedBy: null }; }
+function record(uid = 'student', sessionId = 'S1') { return { studentId: uid, studentName: `Nama ${uid}`, studentNumber: `NIM-${uid}`, sessionId, assistantId: 'assistant', createdAt: serverTimestamp() }; }
+// Matches LAB in src/utils/attendanceValidation.ts.
+const atLab = new GeoPoint(-7.0486, 110.4381);
+function attendance(uid = 'student', sessionId = 'S1') { return { ...record(uid, sessionId), location: atLab }; }
+function permission(uid = 'student') { return { ...record(uid), reason: 'Saya demam dan perlu berobat ke klinik', status: 'Menunggu Pemeriksaan', aiStatus: 'pending', aiCategory: null, reviewedAt: null, reviewedBy: null }; }
 const db = (uid) => env.authenticatedContext(uid, { email: `${uid}@example.test` }).firestore();
 
 before(async () => {
@@ -76,6 +79,12 @@ test('attendance is unique, self-only, timestamped by server and immutable', asy
 test('presensi is rejected before opening, after closing and for nonparticipants', async () => {
   for (const id of ['Closed', 'Future']) await assertFails(setDoc(doc(db('student'), 'attendance', `${id}_student`), attendance('student', id)));
   await assertFails(setDoc(doc(db('outsider'), 'attendance', 'S1_outsider'), attendance('outsider')));
+});
+test('attendance requires a device location inside the lab radius', async () => {
+  const ref = doc(db('student'), 'attendance', 'S1_student');
+  await assertFails(setDoc(ref, record()));
+  await assertFails(setDoc(ref, { ...record(), location: new GeoPoint(-7.0486, 110.4400) })); // ~210 m away
+  await assertSucceeds(setDoc(ref, { ...record(), location: new GeoPoint(-7.0490, 110.4381) })); // ~45 m away
 });
 test('simultaneous attendance transactions produce one record', async () => {
   const attempt = async () => {

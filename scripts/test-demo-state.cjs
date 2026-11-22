@@ -18,7 +18,7 @@ function loadTypeScript(file) {
   return loaded.exports;
 }
 const { demoReducer: reduce, isDemoState } = loadTypeScript(path.join(__dirname, '../src/data/demo-state.ts'));
-const { validateAttendance, formatAttendanceTime } = loadTypeScript(path.join(__dirname, '../src/utils/attendanceValidation.ts'));
+const { validateAttendance, formatAttendanceTime, distanceMeters, validateLabRadius, LAB } = loadTypeScript(path.join(__dirname, '../src/utils/attendanceValidation.ts'));
 let state = {
   username: '', role: null,
   sessions: [{ id: 'S1', practicalName: 'Test', className: 'A', date: '2026-10-27', startTime: '08:00', endTime: '10:00', status: 'Belum Dibuka' }],
@@ -89,3 +89,12 @@ assert.equal(state.username, '');
 assert.equal(state.role, null);
 assert.equal(state.attendance.length, 1, 'Logout preserves shared demo records');
 console.log('Demo state checks passed: shared validation, Jakarta time, identity isolation, role restrictions, session lifecycle, duplicate prevention, persistence shape, logout.');
+
+// Lab radius: ~45 m inside, ~210 m outside, and a known distance (1 degree of latitude ~ 111.2 km).
+assert.equal(validateLabRadius(LAB).distance, 0, 'The lab point itself is inside the radius');
+assert.equal(validateLabRadius({ latitude: LAB.latitude - 0.0004, longitude: LAB.longitude }).valid, true, 'A point ~45 m away is inside');
+const outside = validateLabRadius({ latitude: LAB.latitude, longitude: LAB.longitude + 0.0019 });
+assert.equal(outside.valid, false, 'A point ~210 m away is outside');
+assert.match(outside.message, /luar radius/);
+assert.ok(Math.abs(distanceMeters({ latitude: 0, longitude: 0 }, { latitude: 1, longitude: 0 }) - 111195) < 1, 'Haversine distance is correct');
+console.log('Lab radius checks passed');

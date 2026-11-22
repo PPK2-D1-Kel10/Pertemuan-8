@@ -7,10 +7,10 @@ import { firebase, firebaseConfigured } from '@/services/firebase';
 import { errorMessage } from '@/services/errors';
 import * as repository from '@/services/repository';
 import type { CloudAttendance, CloudSession, PermissionRequest, PermissionStatus, Profile, SessionInput } from '@/types/cloud';
-import { formatAttendanceTime } from '@/utils/attendanceValidation';
+import { formatAttendanceTime, type Coordinates } from '@/utils/attendanceValidation';
 import { validateProfile } from '@/utils/inputValidation';
 
-type Action = { type: 'logout' } | { type: 'open' | 'close' | 'attend'; sessionId: string; time?: string };
+type Action = { type: 'logout' } | { type: 'open' | 'close'; sessionId: string } | { type: 'attend'; sessionId: string; location: Coordinates };
 type State = { username: string; role: Profile['role'] | null; sessions: CloudSession[]; attendance: CloudAttendance[] };
 type AppValue = {
   state: State; profile: Profile | null; user: User | null; permissions: PermissionRequest[];
@@ -133,7 +133,7 @@ export function AppProvider({ children }: PropsWithChildren) {
     return perform(async () => {
       if (action.type === 'logout') { await signOut(firebase().auth); return; }
       const current = requireProfile();
-      if (action.type === 'attend') await repository.recordAttendance(current, action.sessionId);
+      if (action.type === 'attend') await repository.recordAttendance(current, action.sessionId, action.location);
       else await repository.changeSession(action.sessionId, action.type);
     }, action.type === 'logout');
   }
