@@ -20,6 +20,10 @@ service cloud.firestore {
         && request.auth.uid in s.participantIds && s.deleted == false
         && data.createdAt == request.time;
     }
+    // Keep in sync with LAB in src/utils/attendanceValidation.ts (latitude, longitude, radiusMeters).
+    function nearLab(location) {
+      return location is latlng && location.distance(latlng.value(-7.0486, 110.4381)) <= 100;
+    }
     function ownMissingRecord(id) {
       return signedIn() && id.matches('^[A-Za-z0-9]+_' + request.auth.uid + '$');
     }
@@ -70,8 +74,9 @@ service cloud.firestore {
     match /attendance/{id} {
       allow get: if (resource == null && ownMissingRecord(id)) || ownsRecord(resource.data);
       allow list: if ownsRecord(resource.data);
-      allow create: if request.resource.data.keys().hasOnly(['sessionId', 'assistantId', 'studentId', 'studentName', 'studentNumber', 'createdAt'])
-        && newRecord(id, request.resource.data) && session(request.resource.data.sessionId).status == 'Berlangsung';
+      allow create: if request.resource.data.keys().hasOnly(['sessionId', 'assistantId', 'studentId', 'studentName', 'studentNumber', 'location', 'createdAt'])
+        && newRecord(id, request.resource.data) && session(request.resource.data.sessionId).status == 'Berlangsung'
+        && nearLab(request.resource.data.location);
       allow update, delete: if false;
     }
     match /permissions/{id} {

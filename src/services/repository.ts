@@ -1,6 +1,7 @@
-import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, GeoPoint, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { firebase } from './firebase';
 import type { Profile, SessionInput, CloudSession, PermissionStatus } from '@/types/cloud';
+import { validateLabRadius, type Coordinates } from '@/utils/attendanceValidation';
 import { validateProfile, validateReason, validateSession } from '@/utils/inputValidation';
 
 export async function createProfile(name: string, nim: string) {
@@ -50,7 +51,9 @@ export async function changeSession(id: string, action: 'open' | 'close' | 'dele
   });
 }
 
-export async function recordAttendance(profile: Profile, sessionId: string) {
+export async function recordAttendance(profile: Profile, sessionId: string, location: Coordinates) {
+  const radius = validateLabRadius(location);
+  if (!radius.valid) throw new Error(radius.message);
   const { db } = firebase();
   const ref = doc(db, 'attendance', `${sessionId}_${profile.uid}`);
   await runTransaction(db, async (tx) => {
@@ -61,7 +64,10 @@ export async function recordAttendance(profile: Profile, sessionId: string) {
     if (data.deleted || data.status !== 'Berlangsung') throw new Error('Sesi belum dibuka atau sudah ditutup.');
     if (!data.participantIds.includes(profile.uid)) throw new Error('Kamu bukan peserta sesi ini.');
     if (existing.exists()) throw new Error('Kehadiranmu sudah tercatat.');
-    tx.set(ref, { sessionId, assistantId: data.assistantId, studentId: profile.uid, studentName: profile.name, studentNumber: profile.nim, createdAt: serverTimestamp() });
+    tx.set(ref, {
+      sessionId, assistantId: data.assistantId, studentId: profile.uid, studentName: profile.name, studentNumber: profile.nim,
+      location: new GeoPoint(location.latitude, location.longitude), createdAt: serverTimestamp(),
+    });
   });
 }
 
