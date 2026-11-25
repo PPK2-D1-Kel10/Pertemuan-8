@@ -1,6 +1,6 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, type Auth } from 'firebase/auth';
-import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore';
+import { connectFirestoreEmulator, getFirestore, initializeFirestore, type Firestore } from 'firebase/firestore';
 import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions';
 import { initializePersistentAuth } from './persistentAuth';
 
@@ -24,7 +24,7 @@ export function firebase() {
     const existing = getApps().length > 0;
     const app = existing ? getApp() : initializeApp(config);
     const auth = existing ? getAuth(app) : initializePersistentAuth(app);
-    const db = getFirestore(app);
+    const db = existing ? getFirestore(app) : initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
     const functions = getFunctions(app, 'asia-southeast2');
     if (useEmulators && !existing) {
       const host = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST || '127.0.0.1';

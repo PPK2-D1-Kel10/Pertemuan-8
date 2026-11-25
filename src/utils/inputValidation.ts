@@ -10,7 +10,8 @@ export function validateSession(input: SessionInput) {
   const parsed = new Date(`${input.date}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== input.date) throw new Error('Tanggal harus valid dengan format YYYY-MM-DD.');
   if (![input.startTime, input.endTime].every((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t)) || input.endTime <= input.startTime) throw new Error('Gunakan waktu HH:mm (WIB), dengan waktu selesai setelah mulai pada hari yang sama.');
-  if (!input.participantIds.length || input.participantIds.length > 100 || input.participantIds.some((id) => !/^[a-zA-Z0-9_-]{1,128}$/.test(id))) throw new Error('Isi 1–100 UID peserta yang valid.');
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.assistantId)) throw new Error('Isi UID Asprak yang valid.');
+  if (Date.parse(`${input.date}T${input.startTime}:00+07:00`) <= Date.now()) throw new Error('Tanggal dan jam mulai harus setelah waktu sekarang (WIB).');
 }
 export function validateReason(reason: string) {
   if (reason.trim().length < 10 || reason.trim().length > 2000) throw new Error('Alasan izin harus berisi 10–2000 karakter.');

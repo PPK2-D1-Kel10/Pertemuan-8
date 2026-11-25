@@ -8,11 +8,12 @@ import { useApp } from '@/context/AppContext';
 import { ds } from '@/styles/dashboard';
 import { useEmulators } from '@/services/firebase';
 
-export default function LoginScreen() {
+export default function LoginScreen({ initialRegistering = false }: { initialRegistering?: boolean }) {
   const app = useApp();
-  const [registering, setRegistering] = useState(false);
+  const [registering, setRegistering] = useState(initialRegistering);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
   const [name, setName] = useState('');
   const [nim, setNim] = useState('');
   const [notice, setNotice] = useState('');
@@ -33,12 +34,14 @@ export default function LoginScreen() {
           {!completing && <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoComplete="email" />}
           {(registering || completing) && <><Field label="Nama lengkap" value={name} onChangeText={setName} maxLength={100} /><Field label="NIM" value={nim} onChangeText={setNim} maxLength={30} /></>}
           {!completing && <Field label="Kata sandi" value={password} onChangeText={setPassword} secureTextEntry autoComplete={registering ? 'new-password' : 'current-password'} />}
+          {registering && !completing && <Field label="Konfirmasi kata sandi" value={confirmation} onChangeText={setConfirmation} secureTextEntry autoComplete="new-password" />}
           {app.error ? <Text accessibilityRole="alert" style={ds.loginError}>{app.error}</Text> : null}
           {notice ? <Text accessibilityLiveRegion="polite" style={ds.noticeText}>{notice}</Text> : null}
           <Button label={app.busy ? 'Memproses…' : completing ? 'Simpan profil' : registering ? 'Daftar' : 'Masuk'} disabled={disabled} onPress={async () => {
             setNotice('');
+            if (registering && !completing && password !== confirmation) { setNotice('Konfirmasi kata sandi tidak cocok.'); return; }
             const ok = completing ? await app.completeProfile(name, nim) : registering ? await app.register(email, password, name, nim) : await app.login(email, password);
-            if (ok) setPassword('');
+            if (ok) { setPassword(''); setConfirmation(''); }
           }} />
           {!completing ? <>
             <Button label={registering ? 'Sudah punya akun? Masuk' : 'Belum punya akun? Daftar'} disabled={app.busy} variant="secondary" onPress={() => { setRegistering(!registering); setNotice(''); }} />

@@ -11,10 +11,10 @@ export function errorMessage(error: unknown): string {
     'permission-denied': 'Akses ditolak. Periksa hak akses akun dan Firestore Security Rules.',
     'unavailable': 'Server belum dapat dihubungi. Periksa koneksi lalu coba lagi.',
     'failed-precondition': 'Operasi belum dapat dijalankan. Periksa konfigurasi Firestore.',
-    'functions/not-found': 'Layanan AI belum tersedia. Deploy Cloud Functions sesuai panduan; pengajuan tetap tersimpan.',
-    'functions/internal': 'Layanan AI belum dapat memproses pengajuan. Pengajuan tetap tersimpan dan dapat diperiksa Asisten.',
-    'functions/unavailable': 'Layanan AI tidak dapat dihubungi. Coba lagi nanti; pengajuan tetap tersimpan.',
-    'functions/deadline-exceeded': 'Layanan AI terlalu lama merespons. Coba lagi nanti.',
+    'functions/not-found': 'Layanan tidak ditemukan. Periksa data yang dimasukkan dan pastikan Cloud Functions terbaru sudah dideploy.',
+    'functions/internal': 'Server belum dapat memproses permintaan. Coba lagi.',
+    'functions/unavailable': 'Server tidak dapat dihubungi. Coba lagi nanti.',
+    'functions/deadline-exceeded': 'Server terlalu lama merespons. Coba lagi nanti.',
   };
   return (code && messages[code]) || (error instanceof Error ? error.message : 'Terjadi kesalahan. Silakan coba lagi.');
 }

@@ -5,6 +5,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { classify } = require('./classifier.cjs');
 
 initializeApp();
+Object.assign(exports, require('./attendance.cjs'));
 const db = getFirestore();
 const region = 'asia-southeast2';
 

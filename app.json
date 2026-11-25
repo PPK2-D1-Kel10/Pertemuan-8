@@ -39,6 +39,14 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Izinkan kamera untuk memindai QR presensi dari Asprak.",
+          "recordAudioAndroid": false
+        }
       ]
     ],
     "experiments": {

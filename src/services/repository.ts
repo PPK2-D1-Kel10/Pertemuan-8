@@ -1,7 +1,8 @@
-import { collection, doc, GeoPoint, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { firebase } from './firebase';
-import type { Profile, SessionInput, CloudSession, PermissionStatus } from '@/types/cloud';
-import { validateLabRadius, type Coordinates } from '@/utils/attendanceValidation';
+import type { Profile, SessionInput, PermissionStatus } from '@/types/cloud';
+import { type Coordinates } from '@/utils/attendanceValidation';
 import { validateProfile, validateReason, validateSession } from '@/utils/inputValidation';
 
 export async function createProfile(name: string, nim: string) {
@@ -18,57 +19,22 @@ export async function createProfile(name: string, nim: string) {
 
 export async function saveSession(profile: Profile, input: SessionInput, id?: string) {
   validateSession(input);
-  if (profile.role !== 'Asisten') throw new Error('Hanya Asisten yang dapat mengelola sesi.');
-  const { db } = firebase();
-  const ref = id ? doc(db, 'sessions', id) : doc(collection(db, 'sessions'));
-  await runTransaction(db, async (tx) => {
-    const current = await tx.get(ref);
-    if (id && (!current.exists() || current.data().deleted)) throw new Error('Sesi tidak tersedia.');
-    if (current.exists() && (current.data().assistantId !== profile.uid || current.data().status !== 'Belum Dibuka')) throw new Error('Hanya sesi milikmu yang belum dibuka yang dapat diubah.');
-    // Validate participant identities before any write. Profiles cannot be self-promoted.
-    for (const uid of input.participantIds) {
-      const participant = await tx.get(doc(db, 'users', uid));
-      if (!participant.exists() || participant.data().role !== 'Praktikan') throw new Error(`UID peserta tidak ditemukan atau bukan Praktikan: ${uid}`);
-    }
-    const values = { ...input, practicalName: input.practicalName.trim(), className: input.className.trim(), participantIds: [...new Set(input.participantIds)], updatedAt: serverTimestamp() };
-    if (id) tx.update(ref, values);
-    else tx.set(ref, { ...values, assistantId: profile.uid, status: 'Belum Dibuka', deleted: false, createdAt: serverTimestamp() });
-  });
+  if (input.assistantId !== profile.uid) throw new Error('Masukkan UID Asprak milik akun yang sedang login.');
+  await httpsCallable(firebase().functions, 'savePracticalSession')({ input, ...(id ? { sessionId: id } : {}) });
 }
-
 export async function changeSession(id: string, action: 'open' | 'close' | 'delete') {
-  const { db } = firebase();
-  const ref = doc(db, 'sessions', id);
-  await runTransaction(db, async (tx) => {
-    const snapshot = await tx.get(ref);
-    if (!snapshot.exists() || snapshot.data().deleted) throw new Error('Sesi tidak tersedia.');
-    const status = snapshot.data().status;
-    if (action === 'open' && status !== 'Belum Dibuka') throw new Error('Sesi sudah dibuka atau selesai.');
-    if (action === 'close' && status !== 'Berlangsung') throw new Error('Sesi tidak sedang berlangsung.');
-    if (action === 'delete' && status === 'Berlangsung') throw new Error('Tutup sesi sebelum menghapusnya.');
-    // Soft deletion retains the audit trail and does not orphan attendance/permission records.
-    tx.update(ref, { ...(action === 'delete' ? { deleted: true } : { status: action === 'open' ? 'Berlangsung' : 'Selesai' }), updatedAt: serverTimestamp() });
-  });
+  await httpsCallable(firebase().functions, 'changePracticalSession')({ sessionId: id, action });
 }
-
-export async function recordAttendance(profile: Profile, sessionId: string, location: Coordinates) {
-  const radius = validateLabRadius(location);
-  if (!radius.valid) throw new Error(radius.message);
-  const { db } = firebase();
-  const ref = doc(db, 'attendance', `${sessionId}_${profile.uid}`);
-  await runTransaction(db, async (tx) => {
-    const session = await tx.get(doc(db, 'sessions', sessionId));
-    const existing = await tx.get(ref);
-    if (!session.exists()) throw new Error('Sesi tidak ditemukan.');
-    const data = session.data() as CloudSession;
-    if (data.deleted || data.status !== 'Berlangsung') throw new Error('Sesi belum dibuka atau sudah ditutup.');
-    if (!data.participantIds.includes(profile.uid)) throw new Error('Kamu bukan peserta sesi ini.');
-    if (existing.exists()) throw new Error('Kehadiranmu sudah tercatat.');
-    tx.set(ref, {
-      sessionId, assistantId: data.assistantId, studentId: profile.uid, studentName: profile.name, studentNumber: profile.nim,
-      location: new GeoPoint(location.latitude, location.longitude), createdAt: serverTimestamp(),
-    });
-  });
+export async function joinClass(assistantId: string) {
+  await httpsCallable(firebase().functions, 'joinAssistantClass')({ assistantId: assistantId.trim() });
+}
+export type AttendanceQr = { payload: string; expiresAt: number; serverNow: number };
+export async function generateQr(sessionId: string) {
+  const result = await httpsCallable<{ sessionId: string }, AttendanceQr>(firebase().functions, 'generateAttendanceQr')({ sessionId });
+  return result.data;
+}
+export async function recordAttendance(profile: Profile, sessionId: string, location: Coordinates, token: string) {
+  await httpsCallable(firebase().functions, 'submitQrAttendance')({ sessionId, location, token });
 }
 
 export async function submitPermission(profile: Profile, sessionId: string, reason: string) {
@@ -79,7 +45,6 @@ export async function submitPermission(profile: Profile, sessionId: string, reas
     const session = await tx.get(doc(db, 'sessions', sessionId));
     const existing = await tx.get(ref);
     if (!session.exists() || session.data().deleted) throw new Error('Sesi tidak tersedia.');
-    if (!session.data().participantIds.includes(profile.uid)) throw new Error('Kamu bukan peserta sesi ini.');
     if (existing.exists()) throw new Error('Kamu sudah mengajukan izin untuk sesi ini.');
     tx.set(ref, {
       sessionId, assistantId: session.data().assistantId, studentId: profile.uid, studentName: profile.name, studentNumber: profile.nim,
@@ -89,13 +54,14 @@ export async function submitPermission(profile: Profile, sessionId: string, reas
   });
 }
 
-export async function reviewPermission(profile: Profile, id: string, status: Exclude<PermissionStatus, 'Menunggu Pemeriksaan'>) {
+export async function reviewPermission(profile: Profile, id: string, status: Exclude<PermissionStatus, 'Menunggu Pemeriksaan'>, reviewNotes = '') {
+  if (reviewNotes.trim().length > 1000) throw new Error('Catatan maksimal 1000 karakter.');
   const { db } = firebase();
   const ref = doc(db, 'permissions', id);
   await runTransaction(db, async (tx) => {
     const snapshot = await tx.get(ref);
     if (!snapshot.exists()) throw new Error('Pengajuan tidak ditemukan.');
     if (snapshot.data().status !== 'Menunggu Pemeriksaan') throw new Error('Pengajuan sudah diperiksa.');
-    tx.update(ref, { status, reviewedBy: profile.uid, reviewedAt: serverTimestamp() });
+    tx.update(ref, { status, reviewNotes: reviewNotes.trim(), reviewedBy: profile.uid, reviewedAt: serverTimestamp() });
   });
 }

@@ -6,6 +6,7 @@ node_modules/
 # Expo
 .expo/
 dist/
+dist-qr-check/
 dist-sprint2/
 dist-android-sprint2/
 web-build/

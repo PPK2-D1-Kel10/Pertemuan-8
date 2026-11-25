@@ -1,3 +1,5 @@
+import { AttendanceQr } from '@/components/AttendanceQr';
+import { sessionInTime, useNow } from '@/utils/sessionTime';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
@@ -11,6 +13,7 @@ import { SessionEditor } from '@/components/SessionEditor';
 const filters: ('Semua' | SessionStatus)[] = ['Semua', 'Belum Dibuka', 'Berlangsung', 'Selesai'];
 
 export default function AssistantSessionScreen() {
+  const now = useNow();
   const { state, dispatch, deleteSession, busy, offline } = useApp();
   const [editing, setEditing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -65,13 +68,14 @@ export default function AssistantSessionScreen() {
                 <Text style={ds.subtitle}>{attendanceCount} peserta sudah melakukan presensi.</Text>
                 {session.status === 'Belum Dibuka' && (
                   <>
-                    <Text style={ds.small}>Buka sesi agar praktikan dapat mencatat kehadiran.</Text>
+                    <Text style={ds.small}>Sesi dapat dibuka saat jam mulai tiba, sebelum jam selesai. Setelah dibuka, generate QR presensi.</Text>
                     <Button label="Ubah sesi" variant="secondary" disabled={busy || offline} onPress={() => setEditing(session.id)} />
-                    <Button label="Buka sesi presensi" disabled={busy || offline} onPress={async () => {
+                    <Button label="Buka sesi presensi" disabled={busy || offline || !sessionInTime(session, now)} onPress={async () => {
                       if (await dispatch({ type: 'open', sessionId: session.id })) setClosingSessionId(null);
                     }} />
                   </>
                 )}
+                {session.status === 'Berlangsung' && <AttendanceQr session={session} />}
                 {session.status === 'Berlangsung' && (
                   closingSessionId === session.id ? (
                     <View style={ds.notice} accessibilityLiveRegion="polite">

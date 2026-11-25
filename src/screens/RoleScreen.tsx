@@ -14,7 +14,7 @@ export default function RoleScreen() {
       <Text style={ds.small}>Email: {profile?.email}</Text>
       <Text style={ds.subtitle}>Peran: {profile?.role}</Text>
       <Text selectable style={ds.small}>UID: {profile?.uid}</Text>
-      <Text style={ds.subtitle}>Berikan UID ini kepada Asisten untuk didaftarkan ke sesi praktikum. Peran hanya dapat diubah oleh pengelola.</Text>
+      <Text style={ds.subtitle}>{profile?.role === 'Asisten' ? 'Bagikan UID ini kepada Praktikan sebagai kode untuk bergabung ke kelasmu.' : 'Gabung kelas melalui Jadwal & presensi dengan menempelkan UID Asprak.'} Peran hanya dapat diubah oleh pengelola.</Text>
     </Card>
   </Screen>;
 }

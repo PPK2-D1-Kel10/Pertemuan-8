@@ -5,17 +5,19 @@ type AttendanceInput = {
   role: UserRole;
   session: PracticalSession | undefined;
   attendance: readonly AttendanceRecord[];
+  permissions?: readonly { sessionId: string; studentId: string; status: string }[];
 };
 
 export type AttendanceValidationResult =
   | { valid: true }
-  | { valid: false; code: 'identity' | 'role' | 'session' | 'duplicate' | 'unopened' | 'closed'; message: string };
+  | { valid: false; code: 'identity' | 'role' | 'session' | 'duplicate' | 'unopened' | 'closed' | 'leave_conflict'; message: string };
 
 // Shared by the UI and reducer; the reducer always checks the latest state.
-export function validateAttendance({ studentId, role, session, attendance }: AttendanceInput): AttendanceValidationResult {
+export function validateAttendance({ studentId, role, session, attendance, permissions = [] }: AttendanceInput): AttendanceValidationResult {
   if (!studentId.trim()) return { valid: false, code: 'identity', message: 'Identitas Praktikan tidak valid. Silakan login kembali.' };
   if (role !== 'Praktikan') return { valid: false, code: 'role', message: 'Presensi hanya tersedia untuk Praktikan.' };
   if (!session) return { valid: false, code: 'session', message: 'Sesi praktikum tidak ditemukan.' };
+  if (permissions.some(p => p.sessionId === session.id && p.studentId === studentId && p.status === 'Diterima')) return { valid: false, code: 'leave_conflict', message: 'Presensi ditolak karena izin untuk sesi ini sudah disetujui.' };
   if (attendance.some((record) => record.sessionId === session.id && record.studentId === studentId)) {
     return { valid: false, code: 'duplicate', message: 'Kehadiranmu sudah tercatat untuk sesi ini.' };
   }
@@ -24,10 +26,10 @@ export function validateAttendance({ studentId, role, session, attendance }: Att
   return { valid: true };
 }
 
-export type Coordinates = { latitude: number; longitude: number };
+export type Coordinates = { latitude: number; longitude: number; accuracy?: number | null; mocked?: boolean };
 
-// shortcut: one fixed lab for every session, duplicated in firestore.rules (nearLab) — change both; move to a per-session field if labs differ.
-export const LAB = { name: 'Laboratorium Komputer', latitude: -7.0486, longitude: 110.4381, radiusMeters: 100 };
+// Keep synchronized with functions/session-policy.cjs.
+export const LAB = { name: 'FSM UNDIP', latitude: -7.0483968, longitude: 110.4412672, radiusMeters: 1000 };
 
 // Haversine great-circle distance in meters.
 export function distanceMeters(a: Coordinates, b: Coordinates): number {

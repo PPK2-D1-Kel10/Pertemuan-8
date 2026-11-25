@@ -17,10 +17,10 @@ export function Icon({ name, size = 22, color = glassTheme.icon }: { name: IconN
 export function BackgroundDecor() {
   return <><View pointerEvents="none" style={ds.orbOne} /><View pointerEvents="none" style={ds.orbTwo} /></>;
 }
-export function Button({ label, onPress, disabled = false, variant = 'primary' }: { label: string; onPress: () => void; disabled?: boolean; variant?: 'primary' | 'secondary' | 'danger' }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
-    style={({ pressed }) => [ds.button, variant === 'secondary' && ds.secondaryButton, variant === 'danger' && ds.dangerButton, disabled && ds.disabled, pressed && ds.pressed]}>
-    <Text style={[ds.buttonText, variant === 'secondary' && ds.secondaryText]}>{label}</Text>
+export function Button({ label, onPress, disabled = false, variant = 'primary', loading = false }: { label: string; onPress: () => void; disabled?: boolean; variant?: 'primary' | 'secondary' | 'danger'; loading?: boolean }) {
+  return <Pressable accessibilityRole="button" accessibilityState={{ disabled: disabled || loading }} disabled={disabled || loading} onPress={onPress}
+    style={({ pressed }) => [ds.button, variant === 'secondary' && ds.secondaryButton, variant === 'danger' && ds.dangerButton, (disabled || loading) && ds.disabled, pressed && ds.pressed]}>
+    {loading && <ActivityIndicator color="#FFFFFF" />}<Text style={[ds.buttonText, variant === 'secondary' && ds.secondaryText]}>{label}</Text>
   </Pressable>;
 }
 
@@ -34,7 +34,8 @@ function Sidebar({ visible, close }: { visible: boolean; close: () => void }) {
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
   }, [visible, close]);
-  const items: { label: string; href: '/home' | '/schedule' | '/history' | '/role' | '/permissions'; icon: IconName }[] = [
+  const items: { label: string; href: '/classes' | '/home' | '/schedule' | '/history' | '/role' | '/permissions'; icon: IconName }[] = [
+    ...(assistant ? [{ label: 'Kelola kelas', href: '/classes' as const, icon: 'library-outline' as const }] : []),
     { label: 'Dashboard', href: '/home', icon: 'grid-outline' },
     { label: assistant ? 'Kelola sesi' : 'Jadwal & presensi', href: '/schedule', icon: 'calendar-outline' },
     { label: assistant ? 'Rekap kehadiran' : 'Riwayat kehadiran', href: '/history', icon: 'bar-chart-outline' },
@@ -78,7 +79,7 @@ export function Screen({ title, subtitle, children }: PropsWithChildren<{ title:
         <View><Text accessibilityRole="header" style={ds.title}>{title}</Text>{subtitle ? <Text style={ds.subtitle}>{subtitle}</Text> : null}</View>
         {useEmulators && <Text style={ds.noticeText}>Mode emulator lokal — data ini terpisah dari Firebase cloud.</Text>}
         {(offline || cached) && <View style={ds.notice}><Text style={ds.noticeText}>{offline ? 'Koneksi terputus. Data mungkin belum terbaru. Sambungkan internet sebelum menyimpan perubahan.' : 'Menghubungkan ke server. Data yang tampil mungkin belum terbaru.'}</Text></View>}
-        {error ? <View style={ds.notice}><Text accessibilityRole="alert" style={ds.noticeText}>{error}</Text><Button label="Coba sambungkan ulang" disabled={busy} variant="secondary" onPress={retry} /></View> : null}
+        {error ? <View style={ds.notice}><Text accessibilityRole="alert" style={ds.noticeText}>{error}</Text><Button label="Muat ulang data" disabled={busy} variant="secondary" onPress={retry} /></View> : null}
         {busy && <Text accessibilityLiveRegion="polite" style={ds.noticeText}>Memproses… Tunggu konfirmasi server sebelum meninggalkan halaman.</Text>}
         {loading ? <ActivityIndicator color="#FFFFFF" accessibilityLabel="Memuat data praktikum" /> : children}
         <Text style={ds.small}>PraktiKu / Presensi praktikum</Text>

@@ -17,12 +17,11 @@ service cloud.firestore {
         && data.studentId == request.auth.uid
         && data.studentName == profile().name && data.studentNumber == profile().nim
         && data.assistantId == s.assistantId
-        && request.auth.uid in s.participantIds && s.deleted == false
+        && enrolled(s.assistantId) && s.deleted == false
         && data.createdAt == request.time;
     }
-    // Keep in sync with LAB in src/utils/attendanceValidation.ts (latitude, longitude, radiusMeters).
-    function nearLab(location) {
-      return location is latlng && location.distance(latlng.value(-7.0486, 110.4381)) <= 100;
+    function enrolled(assistantId) {
+      return student() && exists(/databases/$(database)/documents/enrollments/$(assistantId + '_' + request.auth.uid));
     }
     function ownMissingRecord(id) {
       return signedIn() && id.matches('^[A-Za-z0-9]+_' + request.auth.uid + '$');
@@ -40,57 +39,44 @@ service cloud.firestore {
       // Role changes are performed by a trusted project administrator through the Console/Admin SDK.
       allow update, delete: if false;
     }
+    match /enrollments/{id} {
+      allow read: if ownsRecord(resource.data);
+      allow write: if false;
+    }
+    match /classes/{id} {
+      allow read: if assistant() && resource.data.assistantId == request.auth.uid;
+      allow write: if false;
+    }
     match /sessions/{id} {
-      function validSession(data) {
-        return data.keys().hasOnly(['practicalName', 'className', 'date', 'startTime', 'endTime', 'participantIds', 'assistantId', 'status', 'deleted', 'createdAt', 'updatedAt'])
-          && text(data.practicalName, 1, 120) && text(data.className, 1, 60)
-          && data.date.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')
-          && data.startTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
-          && data.endTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$') && data.startTime < data.endTime
-          && data.participantIds is list && data.participantIds.size() > 0 && data.participantIds.size() <= 100
-          && data.participantIds.toSet().size() == data.participantIds.size()
-          && data.deleted is bool && data.status in ['Belum Dibuka', 'Berlangsung', 'Selesai']
-          && data.updatedAt == request.time;
-      }
-      allow get: if signedIn() && ((resource == null && assistant()) || (assistant() && resource.data.assistantId == request.auth.uid) || request.auth.uid in resource.data.participantIds);
-      allow list: if signedIn() && ((assistant() && resource.data.assistantId == request.auth.uid) || request.auth.uid in resource.data.participantIds);
-      allow create: if assistant() && validSession(request.resource.data)
-        && request.resource.data.assistantId == request.auth.uid
-        && request.resource.data.status == 'Belum Dibuka' && request.resource.data.deleted == false
-        && request.resource.data.createdAt == request.time;
-      allow update: if assistant() && resource.data.assistantId == request.auth.uid
-        && !resource.data.deleted && validSession(request.resource.data)
-        && request.resource.data.assistantId == resource.data.assistantId
-        && request.resource.data.createdAt == resource.data.createdAt
-        && (
-          (resource.data.status == 'Belum Dibuka' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['practicalName', 'className', 'date', 'startTime', 'endTime', 'participantIds', 'updatedAt']))
-          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']) && (
-            (resource.data.status == 'Belum Dibuka' && request.resource.data.status == 'Berlangsung')
-            || (resource.data.status == 'Berlangsung' && request.resource.data.status == 'Selesai')))
-          || (resource.data.status != 'Berlangsung' && request.resource.data.deleted == true && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'updatedAt']))
-        );
-      allow delete: if false;
+      allow read: if signedIn() && ((assistant() && resource.data.assistantId == request.auth.uid) || enrolled(resource.data.assistantId));
+      // All session writes use trusted callable functions and server time.
+      allow write: if false;
+    }
+    match /attendanceChallenges/{id} {
+      // Tokens are returned only by the owner's generate callable; never readable by students.
+      allow read, write: if false;
     }
     match /attendance/{id} {
       allow get: if (resource == null && ownMissingRecord(id)) || ownsRecord(resource.data);
       allow list: if ownsRecord(resource.data);
-      allow create: if request.resource.data.keys().hasOnly(['sessionId', 'assistantId', 'studentId', 'studentName', 'studentNumber', 'location', 'createdAt'])
-        && newRecord(id, request.resource.data) && session(request.resource.data.sessionId).status == 'Berlangsung'
-        && nearLab(request.resource.data.location);
-      allow update, delete: if false;
+      // QR, membership, time and location are checked atomically by submitQrAttendance.
+      allow create, update, delete: if false;
     }
     match /permissions/{id} {
       allow get: if (resource == null && ownMissingRecord(id)) || ownsRecord(resource.data);
       allow list: if ownsRecord(resource.data);
       allow create: if request.resource.data.keys().hasOnly(['sessionId', 'assistantId', 'studentId', 'studentName', 'studentNumber', 'createdAt', 'reason', 'status', 'aiStatus', 'aiCategory', 'reviewedAt', 'reviewedBy'])
         && newRecord(id, request.resource.data)
+        && !exists(/databases/$(database)/documents/attendance/$(id))
         && text(request.resource.data.reason, 10, 2000)
         && request.resource.data.status == 'Menunggu Pemeriksaan'
         && request.resource.data.aiStatus == 'pending' && request.resource.data.aiCategory == null
         && request.resource.data.reviewedAt == null && request.resource.data.reviewedBy == null;
       allow update: if assistant() && resource.data.assistantId == request.auth.uid
         && resource.data.status == 'Menunggu Pemeriksaan'
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt', 'reviewedBy'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt', 'reviewedBy', 'reviewNotes'])
+        && (!('reviewNotes' in request.resource.data) || text(request.resource.data.reviewNotes, 0, 1000))
+        && (request.resource.data.status != 'Diterima' || !exists(/databases/$(database)/documents/attendance/$(id)))
         && request.resource.data.status in ['Diterima', 'Ditolak']
         && request.resource.data.reviewedAt == request.time && request.resource.data.reviewedBy == request.auth.uid;
       allow delete: if false;

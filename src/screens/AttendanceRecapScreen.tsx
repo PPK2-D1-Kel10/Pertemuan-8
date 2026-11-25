@@ -7,7 +7,7 @@ import { ds } from '@/styles/dashboard';
 
 export default function AttendanceRecapScreen() {
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
-  const { state, permissions } = useApp();
+  const { state, permissions, enrollments } = useApp();
   const selectedId = Array.isArray(id) ? id[0] : id;
   const sessions = state.sessions.filter((session) => !selectedId || session.id === selectedId);
   const sessionIds = new Set(sessions.map((session) => session.id));
@@ -55,7 +55,10 @@ export default function AttendanceRecapScreen() {
           </View>
           {sessions.length ? sessions.map((session) => {
             const participants = records.filter((record) => record.sessionId === session.id);
-            const missing = session.participantIds.filter((uid) => !participants.some((record) => record.studentId === uid));
+            const end = Date.parse(`${session.date}T${session.endTime}:00+07:00`);
+            const members = enrollments.filter(member => member.assistantId === session.assistantId && (member.createdAt?.toMillis() ?? Infinity) < end);
+            const memberIds = [...new Set([...members.map(member => member.studentId), ...participants.map(record => record.studentId)])];
+            const missing = memberIds.filter(uid => !participants.some(record => record.studentId === uid));
             return (
               <Card key={session.id}>
                 <Text style={ds.cardTitle}>{session.practicalName}</Text>
@@ -81,12 +84,13 @@ export default function AttendanceRecapScreen() {
                 <Text style={ds.sectionTitle}>Peserta lainnya ({missing.length})</Text>
                 {missing.map((uid) => {
                   const permission = permissions.find((p) => p.sessionId === session.id && p.studentId === uid);
+                  const member = members.find(item => item.studentId === uid);
                   return <View key={uid} style={ds.column}>
-                    <Text selectable style={ds.small}>{permission ? `${permission.studentName} / ${permission.studentNumber}` : `UID: ${uid}`}</Text>
+                    <Text selectable style={ds.small}>{member ? `${member.studentName} / ${member.studentNumber}` : permission ? `${permission.studentName} / ${permission.studentNumber}` : `UID: ${uid}`}</Text>
                     <StatusBadge status={permission?.status === 'Diterima' ? 'Izin diterima' : permission ? `Izin: ${permission.status}` : session.status === 'Selesai' ? 'Tidak presensi' : 'Belum presensi'} />
                   </View>;
                 })}
-                <Text style={ds.small}>{participants.length} hadir dari {session.participantIds.length} peserta terdaftar.</Text>
+                <Text style={ds.small}>{participants.length} hadir dari {memberIds.length} peserta terdaftar.</Text>
                 <Button label="Lihat detail sesi" variant="secondary" onPress={() => router.push({
                   pathname: '/detail', params: { id: session.id },
                 })} />

@@ -1,3 +1,5 @@
+import { QrScanner } from '@/components/QrScanner';
+import { sessionInTime, useNow } from '@/utils/sessionTime';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -24,26 +26,29 @@ async function currentPosition() {
   ]).catch(() => { throw new Error('Lokasi tidak tersedia. Pastikan GPS aktif dan sinyal memadai, lalu coba lagi.'); })
     .finally(() => clearTimeout(timer));
   if (position.mocked) throw new Error('Lokasi palsu terdeteksi. Matikan aplikasi pemalsu lokasi lalu coba lagi.');
+  if (position.coords.accuracy == null || position.coords.accuracy > 100) throw new Error('GPS kurang akurat. Aktifkan lokasi presisi dan coba lagi.');
   return position.coords;
 }
 
 export default function StudentAttendanceScreen() {
+  const now = useNow();
+  const [token, setToken] = useState('');
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const { state, profile, dispatch, busy, offline, error } = useApp();
+  const { state, profile, dispatch, busy, offline, error, permissions } = useApp();
   const [locating, setLocating] = useState(false);
   const [checked, setChecked] = useState<Checked | null>(null);
   const [locationError, setLocationError] = useState('');
   const [confirming, setConfirming] = useState(false);
   const session = state.sessions.find((item) => item.id === id);
   const mine = state.attendance.find((record) => record.sessionId === id && record.studentId === state.username);
-  const validation = validateAttendance({ studentId: state.username, role: state.role, session, attendance: state.attendance });
-  const blocked = !validation.valid || busy || offline || !!session?.deleted;
+  const validation = validateAttendance({ studentId: state.username, role: state.role, session, attendance: state.attendance, permissions });
+  const blocked = !validation.valid || busy || offline || !!session?.deleted || !session || !sessionInTime(session, now);
 
   const check = async () => {
     setLocating(true); setLocationError(''); setChecked(null);
     try {
       const coords = await currentPosition();
-      const result = { ...validateLabRadius(coords), coords: { latitude: coords.latitude, longitude: coords.longitude }, accuracy: coords.accuracy };
+      const result = { ...validateLabRadius(coords), coords: { latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy }, accuracy: coords.accuracy };
       setChecked(result);
       if (result.valid) setConfirming(true);
     } catch (err) {
@@ -54,8 +59,14 @@ export default function StudentAttendanceScreen() {
   };
   const close = () => setConfirming(false);
   const confirm = async () => {
-    if (!session || !checked?.valid || blocked) return;
-    if (await dispatch({ type: 'attend', sessionId: session.id, location: checked.coords })) close();
+    if (!session || !checked?.valid || blocked || !token) return;
+    setLocating(true); setLocationError('');
+    try {
+      // Fetch a fresh location at submission; do not reuse coordinates from an old confirmation.
+      const fresh = await currentPosition();
+      if (await dispatch({ type: 'attend', sessionId: session.id, location: { latitude: fresh.latitude, longitude: fresh.longitude, accuracy: fresh.accuracy }, token })) close();
+    } catch (err) { close(); setLocationError(err instanceof Error ? err.message : 'Lokasi tidak tersedia.'); }
+    finally { setLocating(false); }
   };
 
   return <Screen title="Presensi praktikum" subtitle={`Kehadiran tercatat hanya saat sesi dibuka dan kamu berada maksimal ${LAB.radiusMeters} m dari ${LAB.name}.`}>
@@ -68,6 +79,9 @@ export default function StudentAttendanceScreen() {
           <Text style={ds.successText}>Kehadiran berhasil tercatat</Text>
           <Text style={ds.successText}>NIM {mine.studentNumber} / {mine.attendanceTime} WIB</Text>
         </View> : <>
+          {!blocked && <QrScanner sessionId={session.id} onScan={value => { setToken(value); setChecked(null); }} />}
+          {token && <Text style={ds.successText}>QR terbaca. Cek lokasi untuk melanjutkan presensi.</Text>}
+          {!sessionInTime(session, now) && <Text style={ds.noticeText}>Presensi hanya tersedia selama jam sesi.</Text>}
           <StatusBadge status={session.status === 'Selesai' ? 'Tidak presensi' : 'Belum presensi'} />
           <Text style={ds.subtitle}>{validation.valid ? 'Ambil lokasi perangkat untuk memvalidasi bahwa kamu berada di laboratorium.' : validation.message}</Text>
           {checked && <View style={checked.valid ? ds.success : ds.notice} accessibilityLiveRegion="polite">
@@ -75,7 +89,7 @@ export default function StudentAttendanceScreen() {
             {checked.accuracy != null && <Text style={ds.small}>Akurasi GPS ±{Math.round(checked.accuracy)} m</Text>}
           </View>}
           {locationError ? <Text accessibilityRole="alert" style={ds.loginError}>{locationError}</Text> : null}
-          <Button label={locating ? 'Mengambil lokasi…' : checked || locationError ? 'Cek lokasi lagi' : 'Cek lokasi & presensi'} disabled={blocked || locating} onPress={check} />
+          <Button label={locating ? 'Mengambil lokasi…' : checked || locationError ? 'Cek lokasi lagi' : 'Cek lokasi & presensi'} disabled={blocked || locating || !token} onPress={check} />
         </>}
       </Card>
       <Modal visible={confirming} transparent animationType="fade" onRequestClose={close}>
@@ -88,7 +102,7 @@ export default function StudentAttendanceScreen() {
               <Text style={ds.small}>NIM {profile?.nim} / Status sesi: {session.status} / {checked?.distance} m dari {LAB.name}</Text>
               <Text style={ds.noticeText} accessibilityLiveRegion="polite">{validation.valid ? 'Catat kehadiran sekarang? Waktu presensi dicatat saat kamu mengonfirmasi.' : validation.message}</Text>
               {error ? <Text accessibilityRole="alert" style={ds.loginError}>{error}</Text> : null}
-              <Button label={busy ? 'Menyimpan…' : 'Ya, catat kehadiran'} disabled={blocked} onPress={confirm} />
+              <Button label={busy ? 'Menyimpan…' : 'Ya, catat kehadiran'} disabled={blocked || locating || !token} onPress={confirm} />
               <Button label="Batal" variant="secondary" onPress={close} />
             </ScrollView>
           </View>
